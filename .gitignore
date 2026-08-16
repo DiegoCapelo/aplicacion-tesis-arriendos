@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+!.env.example
 db.sqlite3
 *.sqlite3
 venv/
@@ -14,4 +15,5 @@ outputs/
 work/
 backend/media/
 frontend/.env*
+!frontend/.env.example
 frontend/dist/

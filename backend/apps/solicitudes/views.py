@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from apps.arrendatarios.models import Arrendatario
 from apps.arriendos.models import Arriendo, Pago
 from apps.arriendos.services import ensure_monthly_payments, periodo_actual
+from apps.permisos import EsAdministradorOEncargado
 from apps.validaciones import limpiar_texto, validar_cedula_ecuador
 
 from .models import SolicitudArrendamiento
@@ -37,6 +38,7 @@ def metodo_pago_para_arriendo(metodo_solicitud):
 class SolicitudArrendamientoViewSet(viewsets.ModelViewSet):
     queryset = SolicitudArrendamiento.objects.select_related("usuario", "habitacion").all()
     serializer_class = SolicitudArrendamientoSerializer
+    permission_classes = [EsAdministradorOEncargado]
 
     def _solicitud_formalizada(self, solicitud):
         marker = f"solicitud #{solicitud.id}"

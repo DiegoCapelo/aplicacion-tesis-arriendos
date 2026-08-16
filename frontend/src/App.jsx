@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const API_BASE = "http://127.0.0.1:8000/api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
 const emptyRoom = {
   codigo: "",
@@ -452,11 +452,11 @@ const columnLabels = {
 };
 
 function authHeader(credentials) {
-  return `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
+  return `Token ${credentials.token}`;
 }
 
 function publicAuthHeader(credentials) {
-  return `Basic ${btoa(`${credentials.correo}:${credentials.password}`)}`;
+  return `Token ${credentials.token}`;
 }
 
 function getLabel(source, id, lookups) {
@@ -729,6 +729,9 @@ function sanitizeInputValue(field, value) {
 }
 
 async function request(path, credentials, options = {}) {
+  if (!credentials?.token) {
+    throw new Error("Sesión expirada. Inicia sesión nuevamente.");
+  }
   const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -768,6 +771,9 @@ async function publicRequest(path, options = {}) {
 }
 
 async function publicAuthRequest(path, credentials, options = {}) {
+  if (!credentials?.token) {
+    throw new Error("Sesión expirada. Inicia sesión nuevamente.");
+  }
   const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -797,11 +803,26 @@ function PublicView() {
   const [solicitud, setSolicitud] = useState(emptySolicitud);
   const [publicUser, setPublicUser] = useState(() => {
     const saved = localStorage.getItem("tesis_public_user");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved);
+    } catch (err) {
+      localStorage.removeItem("tesis_public_user");
+      return null;
+    }
   });
   const [publicCredentials, setPublicCredentials] = useState(() => {
     const saved = localStorage.getItem("tesis_public_auth");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed?.token) return parsed;
+    } catch (err) {
+      // La sesion guardada no es valida.
+    }
+    localStorage.removeItem("tesis_public_auth");
+    localStorage.removeItem("tesis_public_user");
+    return null;
   });
   const [authMode, setAuthMode] = useState(null);
   const [authForm, setAuthForm] = useState(emptyAuthForm);
@@ -946,6 +967,12 @@ function PublicView() {
   }, []);
 
   useEffect(() => {
+    if (publicUser && !publicCredentials) {
+      setPublicUser(null);
+      localStorage.removeItem("tesis_public_user");
+      localStorage.removeItem("tesis_public_auth");
+      return;
+    }
     if (publicUser && publicCredentials) {
       loadMyRequests({ silent: true });
       return;
@@ -956,7 +983,7 @@ function PublicView() {
     setPaymentEditorOpen({});
     setMonthlyPaymentForms({});
     setMonthlyPaymentEditorOpen({});
-  }, [publicUser?.id, publicCredentials?.correo]);
+  }, [publicUser?.id, publicCredentials?.token]);
 
   useEffect(() => {
     function closeModalFromNavigation() {
@@ -1750,12 +1777,13 @@ function PublicView() {
             correo: authForm.correo,
             password: authForm.password,
           };
-      const user = await publicRequest(endpoint, {
+      const authData = await publicRequest(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      const credentials = { correo: authForm.correo, password: authForm.password };
-      savePublicSession(user, credentials);
+      const user = authData.user;
+      const session = { correo: user?.correo || authForm.correo, token: authData.token };
+      savePublicSession(user, session);
       setAuthMode(null);
       setAuthForm(emptyAuthForm);
       if (authMode === "register") {
@@ -2955,9 +2983,25 @@ function PublicView() {
 function AdminView({ onPublicClick }) {
   const [credentials, setCredentials] = useState(() => {
     const saved = localStorage.getItem("tesis_auth");
-    return saved ? JSON.parse(saved) : { username: "admin", password: "Admin12345!" };
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed?.token) return parsed;
+      } catch (err) {
+        localStorage.removeItem("tesis_auth");
+      }
+    }
+    return { username: "admin", password: "" };
   });
-  const [isLogged, setIsLogged] = useState(Boolean(localStorage.getItem("tesis_auth")));
+  const [isLogged, setIsLogged] = useState(() => {
+    const saved = localStorage.getItem("tesis_auth");
+    if (!saved) return false;
+    try {
+      return Boolean(JSON.parse(saved)?.token);
+    } catch (err) {
+      return false;
+    }
+  });
   const [activeModule, setActiveModule] = useState("habitaciones");
   const [selectedInventoryRoomId, setSelectedInventoryRoomId] = useState("");
   const [records, setRecords] = useState([]);
@@ -3166,8 +3210,20 @@ function AdminView({ onPublicClick }) {
     event.preventDefault();
     setError("");
     try {
-      await request("/habitaciones/", credentials);
-      localStorage.setItem("tesis_auth", JSON.stringify(credentials));
+      const authData = await publicRequest("/login/", {
+        method: "POST",
+        body: JSON.stringify({
+          username: credentials.username,
+          password: credentials.password,
+        }),
+      });
+      const session = {
+        username: credentials.username,
+        token: authData.token,
+        user: authData.user,
+      };
+      setCredentials(session);
+      localStorage.setItem("tesis_auth", JSON.stringify(session));
       setIsLogged(true);
     } catch (err) {
       setError(`Usuario o contraseña incorrectos, o backend no disponible. ${err.message}`);
@@ -3176,6 +3232,7 @@ function AdminView({ onPublicClick }) {
 
   function handleLogout() {
     localStorage.removeItem("tesis_auth");
+    setCredentials({ username: "admin", password: "" });
     setIsLogged(false);
     setRecords([]);
     setMessage("");
@@ -3648,7 +3705,7 @@ function AdminView({ onPublicClick }) {
             </label>
             <label>
               Contraseña
-              <input type="password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} />
+              <input type="password" value={credentials.password || ""} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} />
             </label>
             {error && <p className="alert error">{error}</p>}
             <button className="primary-button" type="submit">Entrar</button>

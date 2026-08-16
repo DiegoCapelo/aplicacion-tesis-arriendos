@@ -10,6 +10,7 @@ from apps.habitaciones.views import HabitacionDisponibleViewSet, HabitacionViewS
 from apps.inventario.views import InventarioHabitacionViewSet
 from apps.solicitudes.views import SolicitudArrendamientoViewSet, SolicitudPublicaViewSet
 from apps.usuarios.views import (
+    LoginAdministrativoView,
     LoginInteresadoView,
     PerfilInteresadoView,
     RegistroInteresadoView,
@@ -35,6 +36,7 @@ public_router.register("solicitudes", SolicitudPublicaViewSet, basename="solicit
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/login/", LoginAdministrativoView.as_view()),
     path("api/", include(router.urls)),
     path("api/public/", include(public_router.urls)),
     path("api/public/registro/", RegistroInteresadoView.as_view()),

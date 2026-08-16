@@ -31,6 +31,15 @@ class UsuarioSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["fecha_registro"]
 
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not (user and user.is_authenticated and (user.is_superuser or getattr(user, "es_admin", False))):
+            fields["rol"].read_only = True
+            fields["is_active"].read_only = True
+        return fields
+
     def create(self, validated_data):
         password = validated_data.pop("password", None)
         usuario = Usuario(**validated_data)
@@ -123,6 +132,32 @@ class LoginInteresadoSerializer(serializers.Serializer):
             raise serializers.ValidationError("Correo o contrasena incorrectos.")
         if not usuario.is_active:
             raise serializers.ValidationError("La cuenta esta inactiva.")
+
+        attrs["usuario"] = usuario
+        return attrs
+
+
+class LoginAdministrativoSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        username = attrs["username"].strip()
+        usuario = authenticate(username=username, password=attrs["password"])
+        if not usuario:
+            try:
+                usuario_por_email = Usuario.objects.get(email__iexact=username)
+            except Usuario.DoesNotExist:
+                usuario_por_email = None
+            if usuario_por_email:
+                usuario = authenticate(username=usuario_por_email.username, password=attrs["password"])
+
+        if not usuario:
+            raise serializers.ValidationError("Usuario o contrasena incorrectos.")
+        if not usuario.is_active:
+            raise serializers.ValidationError("La cuenta esta inactiva.")
+        if not (usuario.is_superuser or usuario.es_admin or usuario.es_encargado):
+            raise serializers.ValidationError("Esta cuenta no tiene acceso administrativo.")
 
         attrs["usuario"] = usuario
         return attrs
