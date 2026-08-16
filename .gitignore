@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+db.sqlite3
+*.sqlite3
+venv/
+.venv/
+node_modules/
+dist/
+.vite/
+.pnpm-store/
+outputs/
+work/
+backend/media/
+frontend/.env*
+frontend/dist/
